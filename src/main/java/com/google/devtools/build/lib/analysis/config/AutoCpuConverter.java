@@ -57,6 +57,8 @@ public class AutoCpuConverter implements Converter<String> {
               return "arm";
             case AARCH64:
               return "aarch64";
+            case MIPS64:
+              return "mips64";
             case S390X:
               return "s390x";
             default:
@@ -96,6 +98,8 @@ public class AutoCpuConverter implements Converter<String> {
       return Pair.of(CPU.ARM, OS.LINUX);
     } else if (input.equals("s390x")) {
       return Pair.of(CPU.S390X, OS.LINUX);
+    } else if (input.equals("mips64")) {
+      return Pair.of(CPU.MIPS64, OS.LINUX);
     }
 
     // Use the auto-detected values.

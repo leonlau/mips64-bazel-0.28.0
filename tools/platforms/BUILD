@@ -103,6 +103,7 @@ platform(
         "@platforms//cpu:ppc",
         "@platforms//cpu:arm",
         "@platforms//cpu:aarch64",
+        "@platforms//cpu:mips64",
         "@platforms//cpu:s390x",
     ],
     host_platform = True,
@@ -124,6 +125,7 @@ platform(
         "@platforms//cpu:ppc",
         "@platforms//cpu:arm",
         "@platforms//cpu:aarch64",
+        "@platforms//cpu:mips64",
         "@platforms//cpu:s390x",
     ],
     os_constraints = [

@@ -61,8 +61,9 @@ mkdir -p "${OUTPUT_DIR}/src"
 # May be passed in from outside.
 ZIPOPTS="$ZIPOPTS"
 
-unset JAVA_TOOL_OPTIONS
-unset _JAVA_OPTIONS
+#unset JAVA_TOOL_OPTIONS
+#unset _JAVA_OPTIONS
+export _JAVA_OPTIONS="-Xms20g -Xmx20g"
 
 LDFLAGS=${LDFLAGS:-""}
 
@@ -123,7 +124,7 @@ function java_compilation() {
   fi
 
   # Use BAZEL_JAVAC_OPTS to pass additional arguments to javac, e.g.,
-  # export BAZEL_JAVAC_OPTS="-J-Xmx2g -J-Xms200m"
+  export BAZEL_JAVAC_OPTS="-J-Xmx20g -J-Xms20g"
   # Useful if your system chooses too small of a max heap for javac.
   # We intentionally rely on shell word splitting to allow multiple
   # additional arguments to be passed to javac.

@@ -101,6 +101,7 @@ cc_toolchain_suite(
         "x64_windows_msvc|compiler": ":cc-compiler-x64_windows_msvc",
         "s390x|compiler": ":cc-compiler-s390x",
         "ppc|compiler": ":cc-compiler-ppc",
+        "mips64|compiler": ":cc-compiler-mips64",
         "k8": ":cc-compiler-local",
         "piii": ":cc-compiler-local",
         "arm": ":cc-compiler-local",
@@ -229,6 +230,33 @@ toolchain(
         "@platforms//os:android",
     ],
     toolchain = ":cc-compiler-armeabi-v7a",
+    toolchain_type = ":toolchain_type",
+)
+
+cc_toolchain(
+    name = "cc-compiler-mips64",
+    all_files = ":empty",
+    ar_files = ":empty",
+    as_files = ":empty",
+    compiler_files = ":empty",
+    dwp_files = ":empty",
+    linker_files = ":empty",
+    objcopy_files = ":empty",
+    strip_files = ":empty",
+    supports_param_files = 1,
+    toolchain_config = ":local_linux",
+    toolchain_identifier = "local_linux",
+)
+
+toolchain(
+    name = "cc-toolchain-mips64",
+    exec_compatible_with = [
+        "@platforms//cpu:mips64",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:mips64",
+    ],
+    toolchain = ":cc-compiler-mips64",
     toolchain_type = ":toolchain_type",
 )
 
