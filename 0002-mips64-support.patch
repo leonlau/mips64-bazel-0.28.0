@@ -1,0 +1,411 @@
+From ed3cd79f5398f23b9714052538c7b62a56b0a983 Mon Sep 17 00:00:00 2001
+From: leonlau <leonlcw92@gmail.com>
+Date: Fri, 21 Aug 2020 14:55:50 +0800
+Subject: [PATCH 2/2] mips64 support
+
+---
+ .gitignore                                    |  2 ++
+ scripts/bootstrap/bootstrap.sh                |  2 +-
+ scripts/bootstrap/buildenv.sh                 |  2 +-
+ scripts/bootstrap/compile.sh                  |  7 +++--
+ src/conditions/BUILD                          |  6 ++++
+ src/java_tools/buildjar/BUILD                 |  4 +--
+ .../lib/analysis/config/AutoCpuConverter.java |  4 +++
+ .../google/devtools/build/lib/util/CPU.java   |  1 +
+ third_party/BUILD                             |  6 ++++
+ .../grpc/src/core/lib/gpr/log_linux.cc        |  4 +--
+ third_party/ijar/BUILD                        |  2 --
+ third_party/ijar/README.txt                   |  2 +-
+ third_party/ijar/mapped_file_unix.cc          |  3 +-
+ third_party/ijar/mapped_file_windows.cc       |  4 +--
+ third_party/ijar/zip.cc                       | 12 ++++----
+ third_party/ijar/zip_main.cc                  |  3 +-
+ tools/cpp/BUILD                               | 28 +++++++++++++++++++
+ tools/cpp/lib_cc_configure.bzl                |  2 ++
+ tools/platforms/BUILD                         |  2 ++
+ tools/platforms/BUILD.tools                   |  5 ++++
+ 20 files changed, 78 insertions(+), 23 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index 7d41dcb..eec61bc 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,5 +3,7 @@
+ /bazel-genfiles
+ /bazel-out
+ /bazel-testlogs
++/output
++
+ 
+ 
+diff --git a/scripts/bootstrap/bootstrap.sh b/scripts/bootstrap/bootstrap.sh
+index 4a86dae..570b453 100755
+--- a/scripts/bootstrap/bootstrap.sh
++++ b/scripts/bootstrap/bootstrap.sh
+@@ -35,7 +35,7 @@ _BAZEL_ARGS="--java_toolchain=//src/java_tools/buildjar:bootstrap_toolchain \
+       --host_java_toolchain=//src/java_tools/buildjar:bootstrap_toolchain \
+       --spawn_strategy=standalone \
+       --nojava_header_compilation \
+-      --strategy=Javac=worker --worker_quit_after_build --ignore_unsupported_sandboxing \
++      --strategy=Javac=standalone --ignore_unsupported_sandboxing \
+       --compilation_mode=opt \
+       --distdir=derived/distdir \
+       ${EXTRA_BAZEL_ARGS:-}"
+diff --git a/scripts/bootstrap/buildenv.sh b/scripts/bootstrap/buildenv.sh
+index f5ee696..c42a356 100755
+--- a/scripts/bootstrap/buildenv.sh
++++ b/scripts/bootstrap/buildenv.sh
+@@ -171,7 +171,7 @@ function tempdir() {
+   local DIR="$(mktemp -d "${tmp%%/}/bazel_XXXXXXXX")"
+   mkdir -p "${DIR}"
+   local DIRBASE=$(basename "${DIR}")
+-  eval "cleanup_tempdir_${DIRBASE}() { rm -rf '${DIR}' >&/dev/null || true ; }"
++  eval "cleanup_tempdir_${DIRBASE}() { echo '${IR}' || true ; }"
+   atexit cleanup_tempdir_${DIRBASE}
+   NEW_TMPDIR="${DIR}"
+ }
+diff --git a/scripts/bootstrap/compile.sh b/scripts/bootstrap/compile.sh
+index 90782f9..9bc679c 100755
+--- a/scripts/bootstrap/compile.sh
++++ b/scripts/bootstrap/compile.sh
+@@ -61,8 +61,9 @@ mkdir -p "${OUTPUT_DIR}/src"
+ # May be passed in from outside.
+ ZIPOPTS="$ZIPOPTS"
+ 
+-unset JAVA_TOOL_OPTIONS
+-unset _JAVA_OPTIONS
++#unset JAVA_TOOL_OPTIONS
++#unset _JAVA_OPTIONS
++export _JAVA_OPTIONS="-Xms20g -Xmx20g"
+ 
+ LDFLAGS=${LDFLAGS:-""}
+ 
+@@ -123,7 +124,7 @@ function java_compilation() {
+   fi
+ 
+   # Use BAZEL_JAVAC_OPTS to pass additional arguments to javac, e.g.,
+-  # export BAZEL_JAVAC_OPTS="-J-Xmx2g -J-Xms200m"
++  export BAZEL_JAVAC_OPTS="-J-Xmx20g -J-Xms20g"
+   # Useful if your system chooses too small of a max heap for javac.
+   # We intentionally rely on shell word splitting to allow multiple
+   # additional arguments to be passed to javac.
+diff --git a/src/conditions/BUILD b/src/conditions/BUILD
+index 2b28e28..334ef74 100755
+--- a/src/conditions/BUILD
++++ b/src/conditions/BUILD
+@@ -58,6 +58,12 @@ config_setting(
+     visibility = ["//visibility:public"],
+ )
+ 
++config_setting(
++    name = "linux_mips64",
++    values = {"cpu": "mips64"},
++    visibility = ["//visibility:public"],
++)
++
+ config_setting(
+     name = "remote",
+     values = {"define": "EXECUTOR=remote"},
+diff --git a/src/java_tools/buildjar/BUILD b/src/java_tools/buildjar/BUILD
+index bd2b06e..43bb8ce 100755
+--- a/src/java_tools/buildjar/BUILD
++++ b/src/java_tools/buildjar/BUILD
+@@ -69,8 +69,8 @@ java_toolchain(
+         # Prevent "Could not reserve enough space for object heap" errors on Windows.
+         "-Xmx512m",
+         # Using tiered compilation improves performance of Javac when not using the worker mode.
+-        "-XX:+TieredCompilation",
+-        "-XX:TieredStopAtLevel=1",
++        #"-XX:+TieredCompilation",
++        #"-XX:TieredStopAtLevel=1",
+     ],
+     singlejar = ["//src/java_tools/singlejar:bootstrap_deploy.jar"],
+     source_version = "8",
+diff --git a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
+index 32d25c8..b289faa 100755
+--- a/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
++++ b/src/main/java/com/google/devtools/build/lib/analysis/config/AutoCpuConverter.java
+@@ -57,6 +57,8 @@ public class AutoCpuConverter implements Converter<String> {
+               return "arm";
+             case AARCH64:
+               return "aarch64";
++            case MIPS64:
++              return "mips64";
+             case S390X:
+               return "s390x";
+             default:
+@@ -96,6 +98,8 @@ public class AutoCpuConverter implements Converter<String> {
+       return Pair.of(CPU.ARM, OS.LINUX);
+     } else if (input.equals("s390x")) {
+       return Pair.of(CPU.S390X, OS.LINUX);
++    } else if (input.equals("mips64")) {
++      return Pair.of(CPU.MIPS64, OS.LINUX);
+     }
+ 
+     // Use the auto-detected values.
+diff --git a/src/main/java/com/google/devtools/build/lib/util/CPU.java b/src/main/java/com/google/devtools/build/lib/util/CPU.java
+index 075c94a..6577cc1 100755
+--- a/src/main/java/com/google/devtools/build/lib/util/CPU.java
++++ b/src/main/java/com/google/devtools/build/lib/util/CPU.java
+@@ -26,6 +26,7 @@ public enum CPU {
+   PPC("ppc", ImmutableSet.of("ppc", "ppc64", "ppc64le")),
+   ARM("arm", ImmutableSet.of("arm", "armv7l")),
+   AARCH64("aarch64", ImmutableSet.of("aarch64")),
++  MIPS64("mips64", ImmutableSet.of("mips64el", "mips64")),
+   S390X("s390x", ImmutableSet.of("s390x", "s390")),
+   UNKNOWN("unknown", ImmutableSet.<String>of());
+ 
+diff --git a/third_party/BUILD b/third_party/BUILD
+index 75b0b60..33626fe 100755
+--- a/third_party/BUILD
++++ b/third_party/BUILD
+@@ -525,6 +525,7 @@ UNNECESSARY_DYNAMIC_LIBRARIES = select({
+     # The .so file is an x86 one, so we can just remove it if the CPU is not x86
+     "//src/conditions:arm": "*.so *.jnilib *.dll",
+     "//src/conditions:linux_aarch64": "*.so *.jnilib *.dll",
++    "//src/conditions:linux_mips64": "*.so *.jnilib *.dll",
+     # Play it safe -- better have a big binary than a slow binary
+     # zip -d does require an argument. Supply something bogus.
+     "//conditions:default": "*.bogusextension",
+@@ -701,6 +702,11 @@ config_setting(
+     values = {"host_cpu": "aarch64"},
+ )
+ 
++config_setting(
++    name = "mips64",
++    values = {"host_cpu": "mips64"},
++)
++
+ config_setting(
+     name = "freebsd",
+     values = {"host_cpu": "freebsd"},
+diff --git a/third_party/grpc/src/core/lib/gpr/log_linux.cc b/third_party/grpc/src/core/lib/gpr/log_linux.cc
+index 561276f..c51182f 100755
+--- a/third_party/grpc/src/core/lib/gpr/log_linux.cc
++++ b/third_party/grpc/src/core/lib/gpr/log_linux.cc
+@@ -40,7 +40,7 @@
+ #include <time.h>
+ #include <unistd.h>
+ 
+-static long gettid(void) { return syscall(__NR_gettid); }
++static long _gettid(void) { return syscall(__NR_gettid); }
+ 
+ void gpr_log(const char* file, int line, gpr_log_severity severity,
+              const char* format, ...) {
+@@ -70,7 +70,7 @@ void gpr_default_log(gpr_log_func_args* args) {
+   gpr_timespec now = gpr_now(GPR_CLOCK_REALTIME);
+   struct tm tm;
+   static __thread long tid = 0;
+-  if (tid == 0) tid = gettid();
++  if (tid == 0) tid = _gettid();
+ 
+   timer = static_cast<time_t>(now.tv_sec);
+   final_slash = strrchr(args->file, '/');
+diff --git a/third_party/ijar/BUILD b/third_party/ijar/BUILD
+index 466c7d4..3c4a993 100755
+--- a/third_party/ijar/BUILD
++++ b/third_party/ijar/BUILD
+@@ -7,8 +7,6 @@ package(
+ 
+ licenses(["notice"])  # Apache 2.0
+ 
+-load("//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+-
+ cc_library(
+     name = "zip",
+     srcs = [
+diff --git a/third_party/ijar/README.txt b/third_party/ijar/README.txt
+index d5a6a0f..2b404df 100755
+--- a/third_party/ijar/README.txt
++++ b/third_party/ijar/README.txt
+@@ -55,7 +55,7 @@ Implementation:
+ 
+   ijar is implemented in C++, and runs very quickly.  For example
+   (when optimized) it takes only 530ms to process a 42MB
+-  .jar file containing 5878 classe, resulting in an interface .jar
++  .jar file containing 5878 classes, resulting in an interface .jar
+   file of only 11.4MB in size.  For more usual .jar sizes of a few
+   megabytes, a runtime of 50ms is typical.
+ 
+diff --git a/third_party/ijar/mapped_file_unix.cc b/third_party/ijar/mapped_file_unix.cc
+index fbfca42..6e3a908 100755
+--- a/third_party/ijar/mapped_file_unix.cc
++++ b/third_party/ijar/mapped_file_unix.cc
+@@ -113,7 +113,8 @@ MappedOutputFile::MappedOutputFile(const char* name, size_t estimated_size)
+   size_t mmap_length =
+       std::min(static_cast<size_t>(estimated_size + sysconf(_SC_PAGESIZE)),
+                std::numeric_limits<size_t>::max());
+-  void* mapped = mmap(NULL, mmap_length, PROT_WRITE, MAP_SHARED, fd, 0);
++  void* mapped =
++      mmap(NULL, mmap_length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+   if (mapped == MAP_FAILED) {
+     snprintf(errmsg, MAX_ERROR, "mmap(): %s", strerror(errno));
+     errmsg_ = errmsg;
+diff --git a/third_party/ijar/mapped_file_windows.cc b/third_party/ijar/mapped_file_windows.cc
+index 1bcef8d..b8a86fe 100755
+--- a/third_party/ijar/mapped_file_windows.cc
++++ b/third_party/ijar/mapped_file_windows.cc
+@@ -58,7 +58,7 @@ MappedInputFile::MappedInputFile(const char* name) {
+   if (file == INVALID_HANDLE_VALUE) {
+     string errormsg = blaze_util::GetLastErrorString();
+     BAZEL_DIE(255) << "MappedInputFile(" << name << "): CreateFileW("
+-                   << blaze_util::WstringToString(wname)
++                   << blaze_util::WstringToCstring(wname)
+                    << ") failed: " << errormsg;
+   }
+ 
+@@ -148,7 +148,7 @@ MappedOutputFile::MappedOutputFile(const char* name, size_t estimated_size) {
+   if (file == INVALID_HANDLE_VALUE) {
+     string errormsg = blaze_util::GetLastErrorString();
+     BAZEL_DIE(255) << "MappedOutputFile(" << name << "): CreateFileW("
+-                   << blaze_util::WstringToString(wname)
++                   << blaze_util::WstringToCstring(wname)
+                    << ") failed: " << errormsg;
+   }
+ 
+diff --git a/third_party/ijar/zip.cc b/third_party/ijar/zip.cc
+index 0e79e11..be87b20 100755
+--- a/third_party/ijar/zip.cc
++++ b/third_party/ijar/zip.cc
+@@ -132,9 +132,9 @@ class InputZipFile : public ZipExtractor {
+   // MAX_BUFFER_SIZE must be bigger than the size of the biggest file in the
+   // ZIP. It is set to 2GB here because no one has audited the code for 64-bit
+   // cleanliness.
+-  static const size_t INITIAL_BUFFER_SIZE = 256 * 1024;  // 256K
+-  static const size_t MAX_BUFFER_SIZE = std::numeric_limits<int32_t>::max();
+-  static const size_t MAX_MAPPED_REGION = 32 * 1024 * 1024;
++  static constexpr size_t INITIAL_BUFFER_SIZE = 256 * 1024;  // 256K
++  static constexpr size_t MAX_BUFFER_SIZE = std::numeric_limits<int32_t>::max();
++  static constexpr size_t MAX_MAPPED_REGION = 32 * 1024 * 1024;
+ 
+   // These metadata fields are the fields of the ZIP header of the file being
+   // processed.
+@@ -321,10 +321,8 @@ bool InputZipFile::ProcessNext() {
+   }
+ 
+   // There might be an offset specified in the central directory that does
+-  // not match the file offset, if so, correct the pointer.
+-  if (offset != 0 && (p != (zipdata_in_ + in_offset_ + offset))) {
+-    p = zipdata_in_ + offset;
+-  }
++  // not match the file offset, so always update our pointer.
++  p = zipdata_in_ + in_offset_ + offset;
+ 
+   if (EnsureRemaining(4, "signature") < 0) {
+     return false;
+diff --git a/third_party/ijar/zip_main.cc b/third_party/ijar/zip_main.cc
+index eac095e..b375da3 100755
+--- a/third_party/ijar/zip_main.cc
++++ b/third_party/ijar/zip_main.cc
+@@ -251,11 +251,12 @@ char **read_filelist(char *filename) {
+   }
+ 
+   size_t sizeof_array = sizeof(char *) * (nb_entries + 1);
+-  void *result = malloc(sizeof_array + file_stat.total_size);
++  void *result = malloc(sizeof_array + file_stat.total_size + 1);
+   // copy the content
+   char **filelist = static_cast<char **>(result);
+   char *content = static_cast<char *>(result) + sizeof_array;
+   memcpy(content, data, file_stat.total_size);
++  content[file_stat.total_size] = '\0';
+   free(data);
+   // Create the corresponding array
+   int j = 1;
+diff --git a/tools/cpp/BUILD b/tools/cpp/BUILD
+index e9da96d..78c88f1 100755
+--- a/tools/cpp/BUILD
++++ b/tools/cpp/BUILD
+@@ -101,6 +101,7 @@ cc_toolchain_suite(
+         "x64_windows_msvc|compiler": ":cc-compiler-x64_windows_msvc",
+         "s390x|compiler": ":cc-compiler-s390x",
+         "ppc|compiler": ":cc-compiler-ppc",
++        "mips64|compiler": ":cc-compiler-mips64",
+         "k8": ":cc-compiler-local",
+         "piii": ":cc-compiler-local",
+         "arm": ":cc-compiler-local",
+@@ -232,6 +233,33 @@ toolchain(
+     toolchain_type = ":toolchain_type",
+ )
+ 
++cc_toolchain(
++    name = "cc-compiler-mips64",
++    all_files = ":empty",
++    ar_files = ":empty",
++    as_files = ":empty",
++    compiler_files = ":empty",
++    dwp_files = ":empty",
++    linker_files = ":empty",
++    objcopy_files = ":empty",
++    strip_files = ":empty",
++    supports_param_files = 1,
++    toolchain_config = ":local_linux",
++    toolchain_identifier = "local_linux",
++)
++
++toolchain(
++    name = "cc-toolchain-mips64",
++    exec_compatible_with = [
++        "@platforms//cpu:mips64",
++    ],
++    target_compatible_with = [
++        "@platforms//cpu:mips64",
++    ],
++    toolchain = ":cc-compiler-mips64",
++    toolchain_type = ":toolchain_type",
++)
++
+ cc_toolchain(
+     name = "cc-compiler-k8",
+     all_files = ":empty",
+diff --git a/tools/cpp/lib_cc_configure.bzl b/tools/cpp/lib_cc_configure.bzl
+index 789018f..f242aa2 100755
+--- a/tools/cpp/lib_cc_configure.bzl
++++ b/tools/cpp/lib_cc_configure.bzl
+@@ -197,6 +197,8 @@ def get_cpu_value(repository_ctx):
+         return "arm"
+     if result.stdout.strip() in ["aarch64"]:
+         return "aarch64"
++    if result.stdout.strip() in ["mips64"]:
++        return "mips64"
+     return "k8" if result.stdout.strip() in ["amd64", "x86_64", "x64"] else "piii"
+ 
+ def is_cc_configure_debug(repository_ctx):
+diff --git a/tools/platforms/BUILD b/tools/platforms/BUILD
+index aedc392..0f35854 100755
+--- a/tools/platforms/BUILD
++++ b/tools/platforms/BUILD
+@@ -103,6 +103,7 @@ platform(
+         "@platforms//cpu:ppc",
+         "@platforms//cpu:arm",
+         "@platforms//cpu:aarch64",
++        "@platforms//cpu:mips64",
+         "@platforms//cpu:s390x",
+     ],
+     host_platform = True,
+@@ -124,6 +125,7 @@ platform(
+         "@platforms//cpu:ppc",
+         "@platforms//cpu:arm",
+         "@platforms//cpu:aarch64",
++        "@platforms//cpu:mips64",
+         "@platforms//cpu:s390x",
+     ],
+     os_constraints = [
+diff --git a/tools/platforms/BUILD.tools b/tools/platforms/BUILD.tools
+index f7eece8..9adb8f4 100755
+--- a/tools/platforms/BUILD.tools
++++ b/tools/platforms/BUILD.tools
+@@ -36,6 +36,11 @@ alias(
+     actual = "@platforms//cpu:aarch64",
+ )
+ 
++alias(
++    name = "mips64",
++    actual = "@platforms//cpu:mips64",
++)
++
+ alias(
+     name = "s390x",
+     actual = "@platforms//cpu:s390x",
+-- 
+2.28.0
+
