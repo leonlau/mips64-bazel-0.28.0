@@ -90,6 +90,8 @@ public class LocalConfigPlatformFunction extends RepositoryFunction {
         return "@platforms//cpu:arm";
       case AARCH64:
         return "@platforms//cpu:aarch64";
+      case MIPS64:
+        return "@platforms//cpu:mips64";
       case S390X:
         return "@platforms//cpu:s390x";
       default:

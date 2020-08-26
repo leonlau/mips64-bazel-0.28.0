@@ -23,6 +23,12 @@ config_setting(
 )
 
 config_setting(
+    name = "linux_mips64",
+    values = {"cpu": "mips64"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "darwin_x86_64",
     values = {"cpu": "darwin_x86_64"},
     visibility = ["//visibility:public"],

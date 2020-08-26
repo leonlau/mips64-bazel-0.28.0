@@ -49,6 +49,11 @@ alias(
 )
 
 alias(
+    name = "mips64",
+    actual = "@platforms//cpu:mips64",
+)
+
+alias(
     name = "s390x",
     actual = "@platforms//cpu:s390x",
 )
